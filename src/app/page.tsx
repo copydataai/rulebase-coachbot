@@ -117,7 +117,7 @@ export default async function Home() {
 }
 
 // Helper components for cleaner structure
-const FeatureCard = ({ icon, title, description }) => (
+const FeatureCard = ({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) => (
   <div className="text-center p-8 bg-white rounded-2xl shadow-lg border border-gray-200/80 hover:border-purple-300/50 hover:bg-white transition-all duration-300 transform hover:-translate-y-1">
     <div className="inline-block p-4 bg-purple-100 rounded-full mb-4">
       {icon}
@@ -127,7 +127,7 @@ const FeatureCard = ({ icon, title, description }) => (
   </div>
 );
 
-const BenefitItem = ({ icon, title, description }) => (
+const BenefitItem = ({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) => (
   <li className="flex items-center text-left">
     <div className="flex-shrink-0 h-12 w-12 flex items-center justify-center bg-green-100 rounded-full mr-6">
       {icon}
