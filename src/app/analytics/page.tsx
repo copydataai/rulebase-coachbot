@@ -146,8 +146,11 @@ const EMOTION_COLORS = ['#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6', '#10b981', '
 export default function Analytics() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [inputMethod, setInputMethod] = useState<'file' | 'text'>('file');
+  const [textInput, setTextInput] = useState('');
+  const [showLimitAlert, setShowLimitAlert] = useState(false);
   const [fileName, setFileName] = useState('');
-  const [processingProgress, setProcessingProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processCSVFile = async (file: File): Promise<EnhancedAnalysis[]> => {
@@ -173,7 +176,7 @@ export default function Analytics() {
       
       if (!text || text.length < 3) continue;
 
-      setProcessingProgress((i / Math.min(dataLines.length, 100)) * 100);
+      setProgress((i / Math.min(dataLines.length, 100)) * 100);
 
       // Perform multi-label classification
       const [sentimentResult, emotionResult, urgencyResult, topicResult] = await Promise.all([
@@ -223,7 +226,7 @@ export default function Analytics() {
       
       if (!text || typeof text !== 'string' || text.length < 3) continue;
 
-      setProcessingProgress((i / Math.min(messages.length, 100)) * 100);
+      setProgress((i / Math.min(messages.length, 100)) * 100);
 
       const [sentimentResult, emotionResult, urgencyResult, topicResult] = await Promise.all([
         classify(text, ['positive', 'negative', 'neutral']).catch(() => ({ labels: ['neutral'], scores: [1] })),
@@ -268,7 +271,7 @@ export default function Analytics() {
       const sentence = sentences[i].trim();
       if (sentence.length < 3) continue;
 
-      setProcessingProgress((i / sentences.length) * 100);
+      setProgress((i / sentences.length) * 100);
 
       const [sentimentResult, emotionResult, urgencyResult, topicResult] = await Promise.all([
         classify(sentence, ['positive', 'negative', 'neutral']).catch(() => ({ labels: ['neutral'], scores: [1] })),
@@ -300,6 +303,100 @@ export default function Analytics() {
     }
 
     return results;
+  };
+
+  const processTextInput = async (text: string) => {
+    const lines = text.split('\n').filter(line => line.trim().length > 0);
+    
+    // Show alert if more than 100 lines
+    if (lines.length > 100) {
+      setShowLimitAlert(true);
+    }
+    
+    const limitedLines = lines.slice(0, 100);
+    const enhancedAnalysis: EnhancedAnalysis[] = [];
+
+    for (let i = 0; i < limitedLines.length; i++) {
+      const line = limitedLines[i].trim();
+      if (line.length > 0) {
+        setProgress(((i + 1) / limitedLines.length) * 100);
+        
+        // Parse line to extract speaker, timestamp, and message
+        let text = line;
+        let speaker = undefined;
+        let timestamp = undefined;
+        
+        // Try to detect common formats:
+        // Format 1: "Speaker: Message"
+        const speakerMatch = line.match(/^([^:]+):\s*(.+)$/);
+        if (speakerMatch) {
+          speaker = speakerMatch[1].trim();
+          text = speakerMatch[2].trim();
+        }
+        
+        // Format 2: "[Timestamp] Message" or "(Timestamp) Message"
+        const timestampMatch = line.match(/^[\[\(]([^\]\)]+)[\]\)]\s*(.+)$/);
+        if (timestampMatch) {
+          timestamp = timestampMatch[1].trim();
+          text = timestampMatch[2].trim();
+        }
+        
+        // Format 3: "[Timestamp] Speaker: Message"
+        const fullMatch = line.match(/^[\[\(]([^\]\)]+)[\]\)]\s*([^:]+):\s*(.+)$/);
+        if (fullMatch) {
+          timestamp = fullMatch[1].trim();
+          speaker = fullMatch[2].trim();
+          text = fullMatch[3].trim();
+        }
+
+        try {
+          const [sentimentResult, emotionResult, urgencyResult, topicsResult] = await Promise.all([
+            classify(text, ['positive', 'negative', 'neutral']),
+            classify(text, EMOTION_LABELS),
+            classify(text, URGENCY_LABELS),
+            classify(text, TOPIC_LABELS)
+          ]);
+
+          enhancedAnalysis.push({
+            text,
+            sentiment: {
+              label: sentimentResult.labels[0],
+              score: sentimentResult.scores[0]
+            },
+            emotion: {
+              label: emotionResult.labels[0],
+              score: emotionResult.scores[0]
+            },
+            urgency: {
+              label: urgencyResult.labels[0],
+              score: urgencyResult.scores[0]
+            },
+            topics: topicsResult.labels.slice(0, 3).map((label, idx) => ({
+              label,
+              score: topicsResult.scores[idx]
+            })),
+            index: i,
+            speaker,
+            timestamp
+          });
+        } catch (error) {
+          console.error('Classification error:', error);
+          // Fallback classification
+          enhancedAnalysis.push({
+            text,
+            sentiment: { label: 'neutral', score: 0.5 },
+            emotion: { label: 'neutral', score: 0.5 },
+            urgency: { label: 'medium', score: 0.5 },
+            topics: [{ label: 'general', score: 0.5 }],
+            index: i,
+            speaker,
+            timestamp
+          });
+        }
+      }
+    }
+
+    return enhancedAnalysis;
   };
 
   const generateAnalysisResult = (enhancedAnalysis: EnhancedAnalysis[], processingTime: number, fileType: string): AnalysisResult => {
@@ -425,51 +522,86 @@ export default function Analytics() {
     setFileName(file.name);
     setIsProcessing(true);
     setAnalysisResult(null);
-    setProcessingProgress(0);
+    setProgress(0);
 
     const startTime = Date.now();
 
     try {
       let enhancedAnalysis: EnhancedAnalysis[] = [];
 
-      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-        enhancedAnalysis = await processTextFile(file);
-      } else if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+      if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
         enhancedAnalysis = await processCSVFile(file);
       } else if (file.type === 'application/json' || file.name.endsWith('.json')) {
         enhancedAnalysis = await processJSONFile(file);
+      } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        enhancedAnalysis = await processTextFile(file);
       } else {
-        throw new Error('Unsupported file type. Please use .txt, .csv, or .json files.');
+        throw new Error('Unsupported file type. Please upload a TXT, CSV, or JSON file.');
       }
 
       const processingTime = Date.now() - startTime;
       const result = generateAnalysisResult(enhancedAnalysis, processingTime, file.type);
-      
       setAnalysisResult(result);
     } catch (error) {
-      console.error('Processing error:', error);
+      console.error('File processing error:', error);
       alert(`Error processing file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsProcessing(false);
-      setProcessingProgress(0);
+      setProgress(0);
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleFile(file);
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (file) {
+      handleFile(file);
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  };
+
+  const handleTextSubmit = async () => {
+    if (!textInput.trim()) return;
+
+    setIsProcessing(true);
+    setProgress(0);
+    setAnalysisResult(null);
+    setShowLimitAlert(false);
+
+    const startTime = Date.now();
+    
+    try {
+      const enhancedAnalysis = await processTextInput(textInput);
+      const processingTime = Date.now() - startTime;
+      
+      // Generate analysis result
+      const result = generateAnalysisResult(enhancedAnalysis, processingTime, 'text');
+      setAnalysisResult(result);
+    } catch (error) {
+      console.error('Text processing error:', error);
+    } finally {
+      setIsProcessing(false);
+      setProgress(0);
     }
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleFile(file);
-  };
-
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
   };
 
   const triggerFileSelect = () => {
@@ -480,7 +612,7 @@ export default function Analytics() {
     setAnalysisResult(null);
     setFileName('');
     setIsProcessing(false);
-    setProcessingProgress(0);
+    setProgress(0);
     if(fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -505,47 +637,123 @@ export default function Analytics() {
           </Button>
         </header>
 
-        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
-            {/* Upload or Results View */}
-            {!analysisResult && !isProcessing && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-xl">
-                    <Upload className="mr-3 text-purple-600" /> 
-                    Upload Data for Analysis
-                  </CardTitle>
-                  <CardDescription>
-                    Upload CSV, JSON, or text files for comprehensive sentiment, emotion, urgency, and topic analysis.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleFileChange} 
-                    className="hidden" 
-                    accept=".csv,.json,.txt" 
-                  />
-                  <div
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center cursor-pointer hover:border-purple-400 hover:bg-gray-100 transition-all duration-300"
-                    onClick={triggerFileSelect}
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                  >
-                    <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                    <p className="font-semibold text-lg">Drag & drop a file here</p>
-                    <p className="text-gray-500">or click to select a file</p>
-                    <div className="mt-4 flex justify-center gap-2">
-                      <Badge variant="outline">.txt</Badge>
-                      <Badge variant="outline">.csv</Badge>
-                      <Badge variant="outline">.json</Badge>
+        <main className="flex-1 lg:grid lg:grid-cols-3 lg:gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            {/* Input Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Upload className="mr-2" />
+                  Data Input
+                </CardTitle>
+                <CardDescription>Choose your input method: upload a file or paste text directly</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs value={inputMethod} onValueChange={(value) => setInputMethod(value as 'file' | 'text')} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="file">Upload File</TabsTrigger>
+                    <TabsTrigger value="text">Paste Text</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="file" className="mt-4">
+                    {/* File Upload Section */}
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-purple-400 transition-colors duration-200"
+                      onDrop={handleDrop}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                    >
+                      <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                      <p className="text-lg font-medium text-gray-900 mb-2">
+                        Drop your file here, or{' '}
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="text-purple-600 hover:text-purple-500 underline"
+                        >
+                          browse
+                        </button>
+                      </p>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Supports TXT, CSV, and JSON files
+                      </p>
+                      
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".txt,.csv,.json"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                      
+                      {fileName && (
+                        <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center">
+                              <FileText className="h-5 w-5 text-purple-600 mr-2" />
+                              <span className="text-sm font-medium text-purple-900">{fileName}</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setFileName('');
+                                if (fileInputRef.current) fileInputRef.current.value = '';
+                              }}
+                              className="text-purple-600 hover:text-purple-800"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-gray-600 mt-4">Max file size: 10MB | Advanced multi-label classification</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                  </TabsContent>
+
+                  <TabsContent value="text" className="mt-4">
+                    {/* Text Input Section */}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Paste your transcript or conversation
+                        </label>
+                        <textarea 
+                          value={textInput} 
+                          onChange={(e) => setTextInput(e.target.value)} 
+                          className="w-full h-40 p-4 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent resize-vertical" 
+                          placeholder={`Paste your text here. Supported formats:
+• Simple text (one message per line)
+• Speaker: Message format
+• [Timestamp] Message format
+• [Timestamp] Speaker: Message format`}
+                        />
+                      </div>
+                      
+                      {textInput.trim() && (
+                        <div className="text-sm text-gray-600">
+                          <span>Lines detected: {textInput.split('\n').filter(line => line.trim().length > 0).length}</span>
+                          {textInput.split('\n').filter(line => line.trim().length > 0).length > 100 && (
+                            <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                              <div className="flex items-center">
+                                <AlertTriangle className="h-4 w-4 text-amber-600 mr-2 flex-shrink-0" />
+                                <span className="text-amber-800 text-xs">
+                                  Large dataset detected. Only the first 100 lines will be analyzed for optimal performance.
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <Button 
+                        onClick={handleTextSubmit} 
+                        className="w-full" 
+                        disabled={!textInput.trim() || isProcessing}
+                      >
+                        {isProcessing ? 'Analyzing...' : 'Analyze Text'}
+                      </Button>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
 
             {isProcessing && (
               <Card className="p-8 flex flex-col items-center justify-center space-y-4">
@@ -555,10 +763,10 @@ export default function Analytics() {
                   <div className="bg-gray-200 rounded-full h-2.5">
                     <div 
                       className="bg-purple-600 h-2.5 rounded-full transition-all duration-500" 
-                      style={{ width: `${processingProgress}%` }}
+                      style={{ width: `${progress}%` }}
                     ></div>
                   </div>
-                  <p className="text-sm text-gray-600 text-center">{Math.round(processingProgress)}% complete</p>
+                  <p className="text-sm text-gray-600 text-center">{Math.round(progress)}% complete</p>
                   <Skeleton className="h-8 w-full bg-gray-200" />
                   <Skeleton className="h-8 w-3/4 bg-gray-200" />
                   <Skeleton className="h-8 w-1/2 bg-gray-200" />
