@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart, Bot, CheckCircle, Clock, PieChart, Users, Zap, ArrowRight, Star, Sparkles, TrendingUp } from 'lucide-react';
+import { BarChart, Bot, CheckCircle, Clock, PieChart, Users, Zap, ArrowRight, Star, Sparkles, TrendingUp, Github, Linkedin } from 'lucide-react';
 
 export default async function Home() {
   return (
@@ -37,12 +37,6 @@ export default async function Home() {
               <span className="relative z-10 text-lg">Try Emotion Insights</span>
               <ArrowRight className="ml-2 h-5 w-5 relative z-10 transition-transform group-hover:translate-x-1" />
             </Link>
-            <button className="group inline-flex items-center text-lg font-semibold text-gray-700 hover:text-indigo-600 transition-colors">
-              Watch Demo
-              <div className="ml-2 w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center group-hover:shadow-xl transition-all duration-300">
-                <div className="w-0 h-0 border-l-[6px] border-l-indigo-600 border-y-[4px] border-y-transparent ml-0.5"></div>
-              </div>
-            </button>
           </div>
         </div>
 
@@ -187,7 +181,6 @@ export default async function Home() {
 
       {/* Footer CTA */}
       <footer className="bg-gradient-to-br from-gray-900 via-indigo-900 to-purple-900 text-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(99,102,241,0.3),rgba(255,255,255,0))]"></div>
         <div className="max-w-5xl mx-auto text-center py-24 px-4 sm:py-32 relative z-10">
           <h2 className="text-4xl sm:text-6xl font-bold mb-6 bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
             Ready to Elevate Your Support Team?
@@ -208,6 +201,25 @@ export default async function Home() {
               Schedule a Demo
             </button>
           </div>
+        </div>
+        <div className="border-t border-white/10 mt-20 pt-10 pb-10">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-y-4">
+                    <p className="text-sm text-gray-400">
+                        Released under the MIT License.
+                    </p>
+                    <div className="flex items-center space-x-6">
+                        <Link href="https://github.com/copydataai" target="_blank" className="text-gray-400 hover:text-white transition-colors flex items-center gap-2">
+                            <Github className="w-5 h-5" />
+                            <span>GitHub</span>
+                        </Link>
+                        <Link href="https://www.linkedin.com/in/copydataai" target="_blank" className="text-gray-400 hover:text-white transition-colors flex items-center gap-2">
+                            <Linkedin className="w-5 h-5" />
+                            <span>LinkedIn</span>
+                        </Link>
+                    </div>
+                </div>
+            </div>
         </div>
       </footer>
     </div>
